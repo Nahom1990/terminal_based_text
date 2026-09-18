@@ -101,7 +101,7 @@ class Style:
         back: Optional[str]=None
         attributes:Dict[str,Optional[bool]]={}
 
-        words=iter(style_definition.split())
+        words=iter(style_definition.split()) #lazy evaluation->iterator object
         for original_word in words:
             word=original_word.lower()
             if word =="on":
@@ -149,6 +149,7 @@ class Style:
             style=style.apply(_style)
 
         return style
+    
     def copy(self)->Style:
         """Get a copy of this style.
         
