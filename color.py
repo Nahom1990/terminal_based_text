@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from enum import IntEnum
 from functools import lru_cache
 from math import sqrt
-from typing import Iterable,List,NamedTuple,Tuple,Optional
+from typing import Iterable,NamedTuple,Tuple,Optional
 
 STANDARD_COLORS_NAMES = {
     "black": 0,
@@ -302,7 +301,7 @@ class ColorType(IntEnum):
     FULL=3
 
 class ColorTriplet(NamedTuple):
-    """The red, greem, and blue components of a color"""
+    """The red, green, and blue components of a color"""
     red:int
     green:int
     blue:int
