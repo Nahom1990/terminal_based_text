@@ -1,100 +1,139 @@
 from dataclasses import dataclass
-from typing import Dict,Iterable,List,Optional
+from typing import Dict, Iterable, List, Optional
 
-from markdown_it import MarkdownIt
+from commonmark.blocks import Parser
 
-from .console import Console,ConsoleOptions, StyledText
+from .console import Console, ConsoleOptions, RenderResult, StyledText
 from .style import Style
+from .text import Text
+from ._stack import Stack
 
-@dataclass
-class MarkdownHeading:
-    """A markdown document heading"""
 
-    test:str
-    level:int
-    width:int
+class Heading(Text):
+    def __init__(self, level: int) -> None:
+        super().__init__()
+        self.level = level
 
-    def __console__(self)->str:
-        pass
 
 class Markdown:
     """Render markdown to the console."""
 
-    def __init__(self, markup: str) -> None:
+    def __init__(self, markup):
         self.markup = markup
 
-    def __console_render__(
-        self, console: Console, options: ConsoleOptions
-    ) -> Iterable[StyledText]:
+    def __console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
 
-        width = options.max_width
-        
-        # 1. Initialize the modern markdown-it parser
-        md_parser = MarkdownIt()
-        
-        # 2. Parse the markup into a linear list of tokens
-        tokens = md_parser.parse(self.markup)
+        parser = Parser()
+
+        nodes = parser.parse(self.markup).walker()
 
         rendered: List[StyledText] = []
-        append = rendered.append
-        stack = [Style()]
+        style_stack: Stack[Style] = Stack()
+        stack: Stack[Text] = Stack()
+        style_stack.push(Style())
 
-        style: Optional[Style]
+        null_style = Style()
 
-        for token in tokens:
-            # Handle block-level structures containing text elements
-            if token.type == "inline":
-                if token.children:
-                    for child in token.children:
-                        # Extract structural type (e.g., 'em_open', 'text', etc.)
-                        node_type = child.type
-                        
-                        # Handle base text contents
-                        if node_type == "text":
-                            style = stack[-1].apply(console.get_style("markdown.text"))
-                            append(StyledText(child.content, style))
-                            
-                        # Handle formatting start tags (e.g., strong_open, em_open)
-                        elif node_type.endswith("_open"):
-                            clean_type = node_type.replace("_open", "")
-                            style = console.get_style(f"markdown.{clean_type}")
-                            if style is not None:
-                                stack.append(stack[-1].apply(style))
-                            else:
-                                stack.append(stack[-1])
-                                
-                        # Handle formatting end tags (e.g., strong_close, em_close)
-                        elif node_type.endswith("_close"):
-                            if len(stack) > 1:
-                                stack.pop()
+        def push_style(name: str) -> Style:
 
-            # Handle paragraph spacing
-            elif token.type == "paragraph_close":
-                append(StyledText("\n\n", stack[-1]))
-                
-            # Handle block-level code blocks/fences directly
-            elif token.type in ("fence", "code_block"):
-                style = console.get_style("markdown.code") or stack[-1]
-                append(StyledText(token.content, style))
+            style = console.get_style(name) or null_style
+            style = style_stack.top.apply(style)
+            style_stack.push(style)
+            return style
 
-        print(rendered)
-        return rendered
+        def pop_style() -> Style:
+            return style_stack.pop()
+
+        paragraph_count = 0
+        for current, entering in nodes:
+
+            node_type = current.t
+            if node_type == "text":
+                style = push_style("markdown.text")
+                stack.top.append(current.literal, style)
+                pop_style()
+            elif node_type == "paragraph":
+                if entering:
+                    if paragraph_count:
+                        yield StyledText("\n\n")
+                    paragraph_count += 1
+
+                    push_style("markdown.paragraph")
+                    stack.push(Text())
+                else:
+                    pop_style()
+                    text = stack.pop()
+                    yield text.wrap(options.max_width)
+                    # yield StyledText("\n")
+
+                    # yield StyledText("\n")
+            elif node_type == "heading":
+                if entering:
+                    push_style(f"markdown.h{current.level}")
+                    stack.push(Heading(current.level))
+                else:
+                    pop_style()
+                    text = stack.pop()
+                    yield text.wrap(options.max_width, justify="center")
+                    yield StyledText("\n\n")
+            elif node_type == "code_block":
+                style = push_style("markdown.code_block")
+                text = Text(current.literal.rstrip(), style=style)
+                wrapped_text = text.wrap(options.max_width, justify="left")
+                yield StyledText("\n\n")
+                yield wrapped_text
+                pop_style()
+
+            elif node_type == "code":
+                style = push_style("markdown.code")
+                stack.top.append(current.literal, style)
+                pop_style()
+            elif node_type == "softbreak":
+                stack.top.append("\n")
+            elif node_type == "thematic_break":
+                style = push_style("markdown.hr")
+                yield StyledText(f"\n{'—' * options.max_width}\n", style)
+                paragraph_count = 0
+                pop_style()
+            else:
+                if entering:
+                    push_style(f"markdown.{node_type}")
+                else:
+                    pop_style()
+
+        yield from rendered
 
 
-markup = """*hello*, **world**!
+markup = """
+# This is a header
 
-# Hi
+The main area where I think *Django's models* are `missing` out is the lack of type hinting (hardly surprising since **Django** pre-dates type hints). Adding type hints allows Mypy to detect bugs before you even run your code. It may only save you minutes each time, but multiply that by the number of code + run iterations you do each day, and it can save hours of development time. Multiply that by the lifetime of your project, and it could save weeks or months. A clear win.
 
-```python
-code
+```
+    @property
+    def width(self) -> int:
+        \"\"\"Get the width of the console.
+        
+        Returns:
+            int: The width (in characters) of the console.
+        \"\"\"
+        width, _ = self.size
+        return width
 ```
 
+The main area where I think Django's models are missing out is the lack of type hinting (hardly surprising since Django pre-dates type hints). Adding type hints allows Mypy to detect bugs before you even run your code. It may only save you minutes each time, but multiply that by the number of code + run iterations you do each day, and it can save hours of development time. Multiply that by the lifetime of your project, and it could save weeks or months. A clear win.
+
+---
+
+> This is a *block* quote
+> With another line
 """
 
 if __name__ == "__main__":
     from .console import Console
 
-    console = Console()
+    console = Console(width=79)
+    print(console.size)
     md = Markdown(markup)
 
     console.print(md)

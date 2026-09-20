@@ -8,12 +8,14 @@ from typing import Dict, Iterable, List, Mapping, Optional
 from . import errors
 from .color import Color
 
+
 @dataclass
 class Style:
-    "A terminal style"
+    """A terminal style."""
 
-    color: Optional[str]=None
-    back: Optional[str]=None
+    name: Optional[str] = None
+    color: Optional[str] = None
+    back: Optional[str] = None
     bold: Optional[bool] = None
     dim: Optional[bool] = None
     italic: Optional[bool] = None
@@ -23,14 +25,13 @@ class Style:
     reverse: Optional[bool] = None
     strike: Optional[bool] = None
 
-    _color: Optional[Color] = field(init=False,default=None,repr=False)#text foreground color
-    _back: Optional[Color] = field(init=False,default=None,repr=False)#text backround color
+    _color: Optional[Color] = field(init=False, default=None, repr=False)
+    _back: Optional[Color] = field(init=False, default=None, repr=False)
 
-
-    def __str__(self)->str:
-        """Re-generate style definition from attributes"""
-        attributes:List[str]=[]
-        append=attributes.append
+    def __str__(self) -> str:
+        """Re-generate style definition from attributes."""
+        attributes: List[str] = []
+        append = attributes.append
         if self.bold is not None:
             append("bold" if self.bold else "not bold")
         if self.dim is not None:
@@ -47,30 +48,32 @@ class Style:
             append("reverse" if self.reverse else "not reverse")
         if self.strike is not None:
             append("strike" if self.strike else "not strike")
-
         if self._color is not None:
             append(self._color.name)
-
         if self._back is not None:
             append("on")
             append(self._back.name)
-
         return " ".join(attributes) or "none"
 
     def __repr__(self):
-        return f"<style '{self}'>"
+        """Render a named style differently from an anonymous style."""
+        if self.name is None:
+            return f'<style "{self}">'
+        else:
+            return f'<style {self.name} "{self}">'
 
-    def __post_init__(self)->None:
+    def __post_init__(self) -> None:
         if self.color:
-            self._color=Color.parse(self.color)
+            self._color = Color.parse(self.color)
         if self.back:
-            self._back=Color.parse(self.back)
+            self._back = Color.parse(self.back)
 
-    
     @classmethod
-    def reset(cls)->Style:
-        """Get a style to reset all attributes"""
-        return Style(color="default",
+    def reset(cls) -> Style:
+        """Get a style to reset all attributes."""
+        return Style(
+            "reset",
+            color="default",
             back="default",
             dim=False,
             bold=False,
@@ -83,10 +86,9 @@ class Style:
         )
 
     @classmethod
-    def parse(cls,style_definition:str) -> Style:
-        """Parse style names into style object"""
-
-        style_attributes={
+    def parse(cls, style_definition: str, name: str = None) -> Style:
+        """Parse style name(s) in to style object."""
+        style_attributes = {
             "dim",
             "bold",
             "italic",
@@ -94,25 +96,24 @@ class Style:
             "blink",
             "blink2",
             "reverse",
-            "strike"
+            "strike",
         }
+        color: Optional[str] = None
+        back: Optional[str] = None
+        attributes: Dict[str, Optional[bool]] = {}
 
-        color: Optional[str]=None
-        back: Optional[str]=None
-        attributes:Dict[str,Optional[bool]]={}
-
-        words=iter(style_definition.split()) #lazy evaluation->iterator object
+        words = iter(style_definition.split())
         for original_word in words:
-            word=original_word.lower()
-            if word =="on":
-                word=next(words,"")
+            word = original_word.lower()
+            if word == "on":
+                word = next(words, "")
                 if not word:
                     raise errors.StyleSyntaxError("color expected after 'on'")
                 if Color.parse(word) is None:
                     raise errors.StyleSyntaxError(
                         f"color expected after 'on', found {original_word!r}"
                     )
-                back=word
+                back = word
 
             elif word == "not":
                 word = next(words, "")
@@ -131,26 +132,26 @@ class Style:
                         f"unknown word {original_word!r} in style {style_definition!r}"
                     )
                 color = word
-        style = Style(color=color, back=back, **attributes)
+        style = Style(name, color=color, back=back, **attributes)
         return style
 
     @classmethod
-    def combine(cls,styles:Iterable[Style])->Style:
-        """combine styles and get result.
+    def combine(self, styles: Iterable[Style]) -> Style:
+        """Combine styles and get result.
         
-         Args:
+        Args:
             styles (Iterable[Style]): Styles to combine.
         
         Returns:
-            Style: A new style instance."""
+            Style: A new style instance.
+        """
 
-        style=Style()
+        style = Style()
         for _style in styles:
-            style=style.apply(_style)
-
+            style = style.apply(_style)
         return style
-    
-    def copy(self)->Style:
+
+    def copy(self) -> Style:
         """Get a copy of this style.
         
         Returns:
@@ -158,24 +159,22 @@ class Style:
         """
         return replace(self)
 
-    def render(self,
-               text:str="",*,
-               current_style:Style=None,reset=False)->str:
-        
-        """Render the ansi codes to implement the styles"""
-        attrs: List[str]=[]
-        append=attrs.append
+    def render(
+        self, text: str = "", *, current_style: Style = None, reset=False
+    ) -> str:
+        """Render the ANSI codes to implement the style."""
+        attrs: List[str] = []
+        append = attrs.append
 
         if current_style is None:
-            current=RESET_STYLE
+            current = RESET_STYLE
         else:
-            current=current_style
+            current = current_style
 
-
-        if self._color is not None and current._color!=self._color:
+        if self._color is not None and current._color != self._color:
             attrs.extend(self._color.get_ansi_codes())
 
-        if self._back is not None and current._back!=self._back:
+        if self._back is not None and current._back != self._back:
             attrs.extend(self._back.get_ansi_codes(foreground=False))
 
         if self.bold is not None and current.bold != self.bold:
@@ -203,9 +202,12 @@ class Style:
             append("9" if self.strike else "29")
 
         reset = "\x1b[0m" if reset else ""
-        return f"\x1b[{';'.join(attrs)}m{text or ''}{reset}"
+        if attrs:
+            return f"\x1b[{';'.join(attrs)}m{text or ''}{reset}"
+        else:
+            return f"{text or ''}{reset}"
 
-    def test(self,text:Optional[str]=None)->None:
+    def test(self, text: Optional[str] = None) -> None:
         """Write test text with style to terminal.
         
         Args:
@@ -214,11 +216,10 @@ class Style:
         Returns:
             None:
         """
-        text=text or str(self)
-
+        text = text or str(self)
         sys.stdout.write(f"{self.render(text)}\x1b[0m\n")
 
-    def apply(self,style:Optional[Style])->Style:
+    def apply(self, style: Optional[Style]) -> Style:
         """Merge this style with another.
         
         Args:
@@ -257,4 +258,8 @@ if __name__ == "__main__":
     print(repr(style))
 
     style.test()
+
+    style = Style.parse("bold on black", name="markdown.header")
+    print(style)
+    print(repr(style))
 
