@@ -8,7 +8,6 @@ from .console import Console, ConsoleOptions, RenderResult, RenderableType
 from .style import Style
 from .styled_text import StyledText
 
-
 class TextSpan(NamedTuple):
     """A marked up region in some text."""
 
